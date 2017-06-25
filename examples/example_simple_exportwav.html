@@ -44,7 +44,7 @@
     //input.connect(audio_context.destination);
     //__log('Input connected to audio context destination.');
     
-    recorder = new Recorder(input);
+    recorder = new Recorder(input, {downsampleTo: 16000});
     __log('Recorder initialised.');
 
     recorder.onSilence(function() {

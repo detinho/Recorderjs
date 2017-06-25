@@ -4,10 +4,12 @@ export class Recorder {
     config = {
         bufferLen: 4096,
         numChannels: 2,
-        mimeType: 'audio/wav'
+        mimeType: 'audio/wav',
+        downsampleTo: null
     };
 
     recording = false;
+    recordingAll = false;
 
     callbacks = {
         getBuffer: [],
@@ -39,6 +41,7 @@ export class Recorder {
         };
 
         this.node.onaudioprocess = (e) => {
+            if (!this.recordingAll) return;
 
             var bufferLength = this.analyser.fftSize;
             var dataArray = new Uint8Array(bufferLength);
@@ -46,7 +49,7 @@ export class Recorder {
 
             var curr_value_time = (dataArray[0] / 128) - 1.0;
 
-            if (curr_value_time > 0.01 || curr_value_time < -0.01) {
+            if (curr_value_time > 0.07 || curr_value_time < -0.07) {
                 if (this.isInSilence && this.onOutOfSilenceCallback) {
                     this.onOutOfSilenceCallback();
                 }
@@ -109,7 +112,8 @@ export class Recorder {
             let recLength = 0,
                 recBuffers = [],
                 sampleRate,
-                numChannels;
+                numChannels,
+                downsampleTo;
 
             this.onmessage = function (e) {
                 switch (e.data.command) {
@@ -134,6 +138,7 @@ export class Recorder {
             function init(config) {
                 sampleRate = config.sampleRate;
                 numChannels = config.numChannels;
+                downsampleTo = config.downsampleTo;
                 initBuffers();
             }
 
@@ -172,6 +177,8 @@ export class Recorder {
             function clear() {
                 recLength = 0;
                 recBuffers = [];
+                this.isInSilence = true;
+                this.start = Date.now();
                 initBuffers();
             }
 
@@ -224,6 +231,12 @@ export class Recorder {
             }
 
             function encodeWAV(samples) {
+                const oldSampleRate = sampleRate;
+
+                if (downsampleTo) {
+                    samples = downsampleBuffer(samples, downsampleTo);
+                    sampleRate = downsampleTo;
+                }
                 let buffer = new ArrayBuffer(44 + samples.length * 2);
                 let view = new DataView(buffer);
 
@@ -256,15 +269,41 @@ export class Recorder {
 
                 floatTo16BitPCM(view, 44, samples);
 
+                sampleRate = oldSampleRate;
+
                 return view;
             }
+
+            /*Based on https://github.com/awslabs/aws-lex-browser-audio-capture */
+            function downsampleBuffer(buffer, newSampleRate) {
+                var sampleRateRatio = sampleRate / newSampleRate;
+                var newLength = Math.round(buffer.length / sampleRateRatio);
+                var result = new Float32Array(newLength);
+                var offsetResult = 0;
+                var offsetBuffer = 0;
+                while (offsetResult < result.length) {
+                    var nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
+                    var accum = 0,
+                    count = 0;
+                    for (var i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+                        accum += buffer[i];
+                        count++;
+                    }
+                    result[offsetResult] = accum / count;
+                    offsetResult++;
+                    offsetBuffer = nextOffsetBuffer;
+                }
+                return result;
+            }
+
         }, self);
 
         this.worker.postMessage({
             command: 'init',
             config: {
                 sampleRate: this.context.sampleRate,
-                numChannels: this.config.numChannels
+                numChannels: this.config.numChannels,
+                downsampleTo: this.config.downsampleTo
             }
         });
 
@@ -279,10 +318,19 @@ export class Recorder {
 
     record() {
         this.recording = true;
+        this.recordingAll = true;
     }
 
     stop() {
         this.recording = false;
+    }
+
+    pause() {
+        this.recordingAll = false;
+    }
+
+    resume() {
+        this.recordingAll = true;
     }
 
     clear() {
