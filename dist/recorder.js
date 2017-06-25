@@ -6,7 +6,12 @@ module.exports = require("./recorder").Recorder;
 },{"./recorder":2}],2:[function(require,module,exports){
 'use strict';
 
-var _createClass = (function () {
+Object.defineProperty(exports, "__esModule", {
+    value: true
+});
+exports.Recorder = undefined;
+
+var _createClass = function () {
     function defineProperties(target, props) {
         for (var i = 0; i < props.length; i++) {
             var descriptor = props[i];descriptor.enumerable = descriptor.enumerable || false;descriptor.configurable = true;if ("value" in descriptor) descriptor.writable = true;Object.defineProperty(target, descriptor.key, descriptor);
@@ -14,12 +19,7 @@ var _createClass = (function () {
     }return function (Constructor, protoProps, staticProps) {
         if (protoProps) defineProperties(Constructor.prototype, protoProps);if (staticProps) defineProperties(Constructor, staticProps);return Constructor;
     };
-})();
-
-Object.defineProperty(exports, "__esModule", {
-    value: true
-});
-exports.Recorder = undefined;
+}();
 
 var _inlineWorker = require('inline-worker');
 
@@ -35,7 +35,7 @@ function _classCallCheck(instance, Constructor) {
     }
 }
 
-var Recorder = exports.Recorder = (function () {
+var Recorder = exports.Recorder = function () {
     function Recorder(source, cfg) {
         var _this = this;
 
@@ -51,18 +51,84 @@ var Recorder = exports.Recorder = (function () {
             getBuffer: [],
             exportWAV: []
         };
+        this.onSilenceCallback = null;
+        this.onOutOfSilenceCallback = null;
 
         Object.assign(this.config, cfg);
         this.context = source.context;
         this.node = (this.context.createScriptProcessor || this.context.createJavaScriptNode).call(this.context, this.config.bufferLen, this.config.numChannels, this.config.numChannels);
 
+        this.analyser = source.context.createAnalyser();
+        this.analyser.minDecibels = -90;
+        this.analyser.maxDecibels = -10;
+        this.analyser.smoothingTimeConstant = 0.85;
+        this.analyser.connect(this.node);
+        source.connect(this.analyser);
+
+        this.start = Date.now();
+        this.isInSilence = true;
+        this.lastBufferOnSilence = {
+            'last': [],
+            'beforeLast': []
+        };
+
         this.node.onaudioprocess = function (e) {
+
+            var bufferLength = _this.analyser.fftSize;
+            var dataArray = new Uint8Array(bufferLength);
+            _this.analyser.getByteTimeDomainData(dataArray);
+
+            var curr_value_time = dataArray[0] / 128 - 1.0;
+
+            if (curr_value_time > 0.01 || curr_value_time < -0.01) {
+                if (_this.isInSilence && _this.onOutOfSilenceCallback) {
+                    _this.onOutOfSilenceCallback();
+                }
+                _this.isInSilence = false;
+                _this.start = Date.now();
+            }
+
+            var newtime = Date.now();
+            var elapsedTime = newtime - _this.start;
+            if (elapsedTime > 1500) {
+                if (!_this.isInSilence && _this.onSilenceCallback) {
+                    _this.onSilenceCallback();
+                }
+                _this.isInSilence = true;
+
+                _this.lastBufferOnSilence['beforeLast'] = _this.lastBufferOnSilence['last'];
+                _this.lastBufferOnSilence['last'] = [];
+                for (var channel = 0; channel < _this.config.numChannels; channel++) {
+                    _this.lastBufferOnSilence['last'].push(e.inputBuffer.getChannelData(channel));
+                }
+            }
+
             if (!_this.recording) return;
 
             var buffer = [];
             for (var channel = 0; channel < _this.config.numChannels; channel++) {
                 buffer.push(e.inputBuffer.getChannelData(channel));
             }
+
+            if (_this.lastBufferOnSilence['beforeLast'].length) {
+                _this.worker.postMessage({
+                    command: 'record',
+                    buffer: _this.lastBufferOnSilence['beforeLast']
+                });
+            }
+
+            if (_this.lastBufferOnSilence['last'].length) {
+                _this.worker.postMessage({
+                    command: 'record',
+                    buffer: _this.lastBufferOnSilence['last']
+                });
+            }
+
+            _this.lastBufferOnSilence = {
+                'last': [],
+                'beforeLast': []
+            };
+
             _this.worker.postMessage({
                 command: 'record',
                 buffer: buffer
@@ -76,10 +142,10 @@ var Recorder = exports.Recorder = (function () {
         this.worker = new _inlineWorker2.default(function () {
             var recLength = 0,
                 recBuffers = [],
-                sampleRate = undefined,
-                numChannels = undefined;
+                sampleRate = void 0,
+                numChannels = void 0;
 
-            self.onmessage = function (e) {
+            this.onmessage = function (e) {
                 switch (e.data.command) {
                     case 'init':
                         init(e.data.config);
@@ -117,7 +183,7 @@ var Recorder = exports.Recorder = (function () {
                 for (var channel = 0; channel < numChannels; channel++) {
                     buffers.push(mergeBuffers(recBuffers[channel], recLength));
                 }
-                var interleaved = undefined;
+                var interleaved = void 0;
                 if (numChannels === 2) {
                     interleaved = interleave(buffers[0], buffers[1]);
                 } else {
@@ -126,7 +192,7 @@ var Recorder = exports.Recorder = (function () {
                 var dataview = encodeWAV(interleaved);
                 var audioBlob = new Blob([dataview], { type: type });
 
-                self.postMessage({ command: 'exportWAV', data: audioBlob });
+                this.postMessage({ command: 'exportWAV', data: audioBlob });
             }
 
             function getBuffer() {
@@ -134,7 +200,7 @@ var Recorder = exports.Recorder = (function () {
                 for (var channel = 0; channel < numChannels; channel++) {
                     buffers.push(mergeBuffers(recBuffers[channel], recLength));
                 }
-                self.postMessage({ command: 'getBuffer', data: buffers });
+                this.postMessage({ command: 'getBuffer', data: buffers });
             }
 
             function clear() {
@@ -147,6 +213,10 @@ var Recorder = exports.Recorder = (function () {
                 for (var channel = 0; channel < numChannels; channel++) {
                     recBuffers[channel] = [];
                 }
+                this.lastBufferOnSilence = {
+                    'last': [],
+                    'beforeLast': []
+                };
             }
 
             function mergeBuffers(recBuffers, recLength) {
@@ -279,6 +349,16 @@ var Recorder = exports.Recorder = (function () {
                 type: mimeType
             });
         }
+    }, {
+        key: 'onSilence',
+        value: function onSilence(cb) {
+            this.onSilenceCallback = cb;
+        }
+    }, {
+        key: 'onOutOfSilence',
+        value: function onOutOfSilence(cb) {
+            this.onOutOfSilenceCallback = cb;
+        }
     }], [{
         key: 'forceDownload',
         value: function forceDownload(blob, filename) {
@@ -293,7 +373,7 @@ var Recorder = exports.Recorder = (function () {
     }]);
 
     return Recorder;
-})();
+}();
 
 exports.default = Recorder;
 

@@ -13,11 +13,13 @@
 
   <h1>Recorder.js simple WAV export example</h1>
 
-  <p>Make sure you are using a recent version of Google Chrome.</p>
   <p>Also before you enable microphone input either plug in headphones or turn the volume down if you want to avoid ear splitting feedback!</p>
+  <p>Just start talking. When a 1.5 second silence is detected the sound will be saved.<p>
+  <p>Before play a sound, press the never record, so the voice detection stops.</p>
 
-  <button onclick="startRecording(this);">record</button>
-  <button onclick="stopRecording(this);" disabled>stop</button>
+  <!--<button onclick="startRecording(this);">record</button>
+  <button onclick="stopRecording(this);" disabled>stop</button>-->
+  <button onclick="changeNeverRecord(this);">Never record</button>
   
   <h2>Recordings</h2>
   <ul id="recordingslist"></ul>
@@ -32,6 +34,7 @@
 
   var audio_context;
   var recorder;
+  var neverRecord = false;
 
   function startUserMedia(stream) {
     var input = audio_context.createMediaStreamSource(stream);
@@ -43,25 +46,51 @@
     
     recorder = new Recorder(input);
     __log('Recorder initialised.');
+
+    recorder.onSilence(function() {
+      stopRecording();
+    });
+
+    recorder.onOutOfSilence(function() {
+      startRecording();
+    })
   }
 
   function startRecording(button) {
+    if (neverRecord) {
+      return;
+    }
+
     recorder && recorder.record();
-    button.disabled = true;
-    button.nextElementSibling.disabled = false;
+
+    if (button) {
+      button.disabled = true;
+      button.nextElementSibling.disabled = false;
+    }
     __log('Recording...');
   }
 
   function stopRecording(button) {
+    if (neverRecord) {
+      return;
+    }
+
     recorder && recorder.stop();
-    button.disabled = true;
-    button.previousElementSibling.disabled = false;
+    if (button) {
+      button.disabled = true;
+      button.previousElementSibling.disabled = false;
+    }
     __log('Stopped recording.');
     
     // create WAV download link using audio data blob
     createDownloadLink();
     
     recorder.clear();
+  }
+
+  function changeNeverRecord(button) {
+    neverRecord = !neverRecord;
+    __log('Never record changed to ' + neverRecord);
   }
 
   function createDownloadLink() {
@@ -86,19 +115,16 @@
     try {
       // webkit shim
       window.AudioContext = window.AudioContext || window.webkitAudioContext;
-      navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia;
       window.URL = window.URL || window.webkitURL;
       
       audio_context = new AudioContext;
       __log('Audio context set up.');
-      __log('navigator.getUserMedia ' + (navigator.getUserMedia ? 'available.' : 'not present!'));
+      __log('navigator.getUserMedia ' + (navigator.mediaDevices.getUserMedia ? 'available.' : 'not present!'));
     } catch (e) {
       alert('No web audio support in this browser!');
     }
     
-    navigator.getUserMedia({audio: true}, startUserMedia, function(e) {
-      __log('No live audio input: ' + e);
-    });
+    navigator.mediaDevices.getUserMedia({audio: true}).then(startUserMedia);
   };
   </script>
 

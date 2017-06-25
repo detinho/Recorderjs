@@ -14,6 +14,9 @@ export class Recorder {
         exportWAV: []
     };
 
+    onSilenceCallback = null;
+    onOutOfSilenceCallback = null;
+
     constructor(source, cfg) {
         Object.assign(this.config, cfg);
         this.context = source.context;
@@ -21,13 +24,77 @@ export class Recorder {
         this.context.createJavaScriptNode).call(this.context,
             this.config.bufferLen, this.config.numChannels, this.config.numChannels);
 
+        this.analyser = source.context.createAnalyser();
+        this.analyser.minDecibels = -90;
+        this.analyser.maxDecibels = -10;
+        this.analyser.smoothingTimeConstant = 0.85;
+        this.analyser.connect(this.node);
+        source.connect(this.analyser);
+
+        this.start = Date.now();
+        this.isInSilence = true;
+        this.lastBufferOnSilence = {
+            'last': [],
+            'beforeLast': []
+        };
+
         this.node.onaudioprocess = (e) => {
+
+            var bufferLength = this.analyser.fftSize;
+            var dataArray = new Uint8Array(bufferLength);
+            this.analyser.getByteTimeDomainData(dataArray);
+
+            var curr_value_time = (dataArray[0] / 128) - 1.0;
+
+            if (curr_value_time > 0.01 || curr_value_time < -0.01) {
+                if (this.isInSilence && this.onOutOfSilenceCallback) {
+                    this.onOutOfSilenceCallback();
+                }
+                this.isInSilence = false;
+                this.start = Date.now();
+            }
+
+            var newtime = Date.now();
+            var elapsedTime = newtime - this.start;
+            if (elapsedTime > 1500) {
+                if (!this.isInSilence && this.onSilenceCallback) {
+                    this.onSilenceCallback();
+                }
+                this.isInSilence = true;
+
+                this.lastBufferOnSilence['beforeLast'] = this.lastBufferOnSilence['last'];
+                this.lastBufferOnSilence['last'] = [];
+                for (var channel = 0; channel < this.config.numChannels; channel++) {
+                    this.lastBufferOnSilence['last'].push(e.inputBuffer.getChannelData(channel));
+                }
+            }
+
             if (!this.recording) return;
 
             var buffer = [];
             for (var channel = 0; channel < this.config.numChannels; channel++) {
                 buffer.push(e.inputBuffer.getChannelData(channel));
             }
+
+            if (this.lastBufferOnSilence['beforeLast'].length) {
+                this.worker.postMessage({
+                    command: 'record',
+                    buffer: this.lastBufferOnSilence['beforeLast']
+                });
+            }
+
+            if (this.lastBufferOnSilence['last'].length) {
+                this.worker.postMessage({
+                    command: 'record',
+                    buffer: this.lastBufferOnSilence['last']
+                });
+            }
+
+            this.lastBufferOnSilence = {
+                'last': [],
+                'beforeLast': []
+            };
+
             this.worker.postMessage({
                 command: 'record',
                 buffer: buffer
@@ -112,6 +179,10 @@ export class Recorder {
                 for (let channel = 0; channel < numChannels; channel++) {
                     recBuffers[channel] = [];
                 }
+                this.lastBufferOnSilence = {
+                    'last': [],
+                    'beforeLast': []
+                };
             }
 
             function mergeBuffers(recBuffers, recLength) {
@@ -238,6 +309,14 @@ export class Recorder {
             command: 'exportWAV',
             type: mimeType
         });
+    }
+
+    onSilence(cb) {
+        this.onSilenceCallback = cb;
+    }
+
+    onOutOfSilence(cb) {
+        this.onOutOfSilenceCallback = cb;
     }
 
     static
