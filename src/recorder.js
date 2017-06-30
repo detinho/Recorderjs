@@ -59,7 +59,7 @@ export class Recorder {
 
             var newtime = Date.now();
             var elapsedTime = newtime - this.start;
-            if (elapsedTime > 1500) {
+            if (elapsedTime > 700) {
                 if (!this.isInSilence && this.onSilenceCallback) {
                     this.onSilenceCallback();
                 }

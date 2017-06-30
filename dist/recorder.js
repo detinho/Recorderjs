@@ -93,7 +93,7 @@ var Recorder = exports.Recorder = function () {
 
             var newtime = Date.now();
             var elapsedTime = newtime - _this.start;
-            if (elapsedTime > 1500) {
+            if (elapsedTime > 700) {
                 if (!_this.isInSilence && _this.onSilenceCallback) {
                     _this.onSilenceCallback();
                 }
