@@ -45,7 +45,8 @@ var Recorder = exports.Recorder = function () {
             bufferLen: 4096,
             numChannels: 2,
             mimeType: 'audio/wav',
-            downsampleTo: null
+            downsampleTo: null,
+            silenceTime: 1500
         };
         this.recording = false;
         this.recordingAll = false;
@@ -93,7 +94,8 @@ var Recorder = exports.Recorder = function () {
 
             var newtime = Date.now();
             var elapsedTime = newtime - _this.start;
-            if (elapsedTime > 700) {
+            console.log(_this.config.silenceTime);
+            if (elapsedTime > _this.config.silenceTime) {
                 if (!_this.isInSilence && _this.onSilenceCallback) {
                     _this.onSilenceCallback();
                 }
@@ -147,7 +149,8 @@ var Recorder = exports.Recorder = function () {
                 recBuffers = [],
                 sampleRate = void 0,
                 numChannels = void 0,
-                downsampleTo = void 0;
+                downsampleTo = void 0,
+                silenceTime = void 0;
 
             this.onmessage = function (e) {
                 switch (e.data.command) {
@@ -173,6 +176,7 @@ var Recorder = exports.Recorder = function () {
                 sampleRate = config.sampleRate;
                 numChannels = config.numChannels;
                 downsampleTo = config.downsampleTo;
+                silenceTime = config.silenceTime;
                 initBuffers();
             }
 
@@ -336,7 +340,8 @@ var Recorder = exports.Recorder = function () {
             config: {
                 sampleRate: this.context.sampleRate,
                 numChannels: this.config.numChannels,
-                downsampleTo: this.config.downsampleTo
+                downsampleTo: this.config.downsampleTo,
+                silenceTime: this.config.silenceTime
             }
         });
 
@@ -353,6 +358,11 @@ var Recorder = exports.Recorder = function () {
         value: function record() {
             this.recording = true;
             this.recordingAll = true;
+
+            if (!this.onOutOfSilenceCallback) {
+                this.isInSilence = false;
+                this.start = Date.now();
+            }
         }
     }, {
         key: 'stop',
@@ -368,6 +378,10 @@ var Recorder = exports.Recorder = function () {
         key: 'resume',
         value: function resume() {
             this.recordingAll = true;
+            if (!this.onOutOfSilenceCallback) {
+                this.isInSilence = false;
+                this.start = Date.now();
+            }
         }
     }, {
         key: 'clear',

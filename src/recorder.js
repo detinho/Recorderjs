@@ -5,7 +5,8 @@ export class Recorder {
         bufferLen: 4096,
         numChannels: 2,
         mimeType: 'audio/wav',
-        downsampleTo: null
+        downsampleTo: null,
+        silenceTime: 1500
     };
 
     recording = false;
@@ -59,7 +60,8 @@ export class Recorder {
 
             var newtime = Date.now();
             var elapsedTime = newtime - this.start;
-            if (elapsedTime > 700) {
+            console.log(this.config.silenceTime);
+            if (elapsedTime > this.config.silenceTime) {
                 if (!this.isInSilence && this.onSilenceCallback) {
                     this.onSilenceCallback();
                 }
@@ -113,7 +115,8 @@ export class Recorder {
                 recBuffers = [],
                 sampleRate,
                 numChannels,
-                downsampleTo;
+                downsampleTo,
+                silenceTime;
 
             this.onmessage = function (e) {
                 switch (e.data.command) {
@@ -139,6 +142,7 @@ export class Recorder {
                 sampleRate = config.sampleRate;
                 numChannels = config.numChannels;
                 downsampleTo = config.downsampleTo;
+                silenceTime = config.silenceTime;
                 initBuffers();
             }
 
@@ -303,7 +307,8 @@ export class Recorder {
             config: {
                 sampleRate: this.context.sampleRate,
                 numChannels: this.config.numChannels,
-                downsampleTo: this.config.downsampleTo
+                downsampleTo: this.config.downsampleTo,
+                silenceTime: this.config.silenceTime
             }
         });
 
