@@ -60,7 +60,6 @@ export class Recorder {
 
             var newtime = Date.now();
             var elapsedTime = newtime - this.start;
-            console.log(this.config.silenceTime);
             if (elapsedTime > this.config.silenceTime) {
                 if (!this.isInSilence && this.onSilenceCallback) {
                     this.onSilenceCallback();
