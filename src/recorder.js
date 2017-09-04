@@ -319,6 +319,11 @@ export class Recorder {
     record() {
         this.recording = true;
         this.recordingAll = true;
+
+        if (!this.onOutOfSilenceCallback) {
+            this.isInSilence = false;
+            this.start = Date.now();
+        }
     }
 
     stop() {
@@ -331,6 +336,10 @@ export class Recorder {
 
     resume() {
         this.recordingAll = true;
+        if (!this.onOutOfSilenceCallback) {
+            this.isInSilence = false;
+            this.start = Date.now();
+        }
     }
 
     clear() {
